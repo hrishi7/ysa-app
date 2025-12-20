@@ -1,0 +1,488 @@
+import React, { useState, useCallback } from 'react';
+import {
+  Layout,
+  Text,
+  Button,
+  Icon,
+  CheckBox,
+  useTheme,
+} from '@ui-kitten/components';
+import { NotificationBell } from '../../components/NotificationBell';
+import { i18n } from '../../i18n';
+import {
+  StyleSheet,
+  View,
+  FlatList,
+  RefreshControl,
+  Alert,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FilterChip } from '../../components/FilterChip';
+import { PaymentCard } from '../../components/PaymentCard';
+import { BottomSheetModal } from '../../components/BottomSheetModal';
+import { EmptyState } from '../../components/EmptyState';
+import { useAppSelector } from '../../redux/hooks';
+import { Payment, PaymentStatus, PaymentMode, UserRole, User } from '../../types';
+import { spacing, borderRadius } from '../../theme';
+
+// Mock payment data
+const MOCK_PAYMENTS: Payment[] = [
+  {
+    _id: '1',
+    studentId: {
+      _id: 's1',
+      name: 'John Doe',
+      email: 'john@email.com',
+    } as User,
+    amount: 15000,
+    paymentDate: new Date(Date.now() - 86400000).toISOString(),
+    paymentMode: PaymentMode.UPI,
+    receiptNumber: 'R-202412-0001',
+    status: PaymentStatus.APPROVED,
+    recordedBy: 'admin1',
+    approvedBy: 'superadmin',
+    approvedAt: new Date().toISOString(),
+    receiptUrl: '/v1/payments/1/receipt',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    _id: '2',
+    studentId: {
+      _id: 's2',
+      name: 'Jane Smith',
+      email: 'jane@email.com',
+    } as User,
+    amount: 8000,
+    paymentDate: new Date(Date.now() - 172800000).toISOString(),
+    paymentMode: PaymentMode.CASH,
+    receiptNumber: 'R-202412-0002',
+    status: PaymentStatus.PENDING_APPROVAL,
+    recordedBy: 'receptionist1',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    _id: '3',
+    studentId: {
+      _id: 's3',
+      name: 'Mike Johnson',
+      email: 'mike@email.com',
+    } as User,
+    amount: 25000,
+    paymentDate: new Date(Date.now() - 604800000).toISOString(),
+    paymentMode: PaymentMode.ONLINE,
+    receiptNumber: 'R-202412-0003',
+    status: PaymentStatus.APPROVED,
+    recordedBy: 'admin1',
+    approvedBy: 'superadmin',
+    approvedAt: new Date(Date.now() - 518400000).toISOString(),
+    receiptUrl: '/v1/payments/3/receipt',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    _id: '4',
+    studentId: {
+      _id: 's1',
+      name: 'John Doe',
+      email: 'john@email.com',
+    } as User,
+    amount: 5000,
+    paymentDate: new Date(Date.now() - 1209600000).toISOString(),
+    paymentMode: PaymentMode.CHEQUE,
+    receiptNumber: 'R-202411-0004',
+    status: PaymentStatus.REJECTED,
+    recordedBy: 'receptionist1',
+    rejectionReason: 'Cheque bounced',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+type StatusFilter = 'all' | PaymentStatus;
+
+const PAYMENT_FILTERS = [
+  { label: 'all', getLabel: () => i18n.t('all') },
+  { label: 'approved', getLabel: () => i18n.t('payment_approved') },
+  { label: 'pending', getLabel: () => i18n.t('payment_pending') },
+  { label: 'rejected', getLabel: () => i18n.t('payment_rejected') },
+];
+
+export const PaymentsScreen = () => {
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  const userRole = useAppSelector((state) => state.auth.role);
+  const currentUser = useAppSelector((state) => state.auth.user);
+
+  const isStaff = userRole === UserRole.ADMIN || userRole === UserRole.RECEPTIONIST || userRole === UserRole.SUPER_ADMIN;
+  const canBulkNotify = userRole === UserRole.SUPER_ADMIN || userRole === UserRole.ADMIN;
+
+  // Filter payments based on role
+  const getPaymentsForRole = () => {
+    if (isStaff) return MOCK_PAYMENTS;
+    // Students see only their payments
+    return MOCK_PAYMENTS.filter(
+      (p) => (p.studentId as User)?._id === 's1' // Mock: assume current student is s1
+    );
+  };
+
+  const [payments] = useState<Payment[]>(getPaymentsForRole());
+  const [selectedStatus, setSelectedStatus] = useState<PaymentStatus | 'all'>('all');
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedPayments, setSelectedPayments] = useState<Set<string>>(new Set());
+  const [selectMode, setSelectMode] = useState(false);
+  const [filters] = useState(PAYMENT_FILTERS);
+
+  const filteredPayments = payments.filter((payment) => {
+    if (selectedStatus === 'all') return true;
+    return payment.status === selectedStatus;
+  });
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 1000);
+  }, []);
+
+  const handlePaymentPress = (payment: Payment) => {
+    if (selectMode) {
+      togglePaymentSelection(payment._id);
+    } else {
+      setSelectedPayment(payment);
+      setModalVisible(true);
+    }
+  };
+
+  const togglePaymentSelection = (paymentId: string) => {
+    setSelectedPayments((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(paymentId)) {
+        newSet.delete(paymentId);
+      } else {
+        newSet.add(paymentId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedPayments.size === filteredPayments.length) {
+      setSelectedPayments(new Set());
+    } else {
+      setSelectedPayments(new Set(filteredPayments.map((p) => p._id)));
+    }
+  };
+
+  const handleBulkNotify = () => {
+    Alert.alert(
+      'Send Reminders',
+      `Send payment reminders to ${selectedPayments.size} students?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send',
+          onPress: () => {
+            // Mock send notification
+            Alert.alert('Success', 'Payment reminders sent!');
+            setSelectedPayments(new Set());
+            setSelectMode(false);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDownloadReceipt = (payment: Payment) => {
+    if (payment.status !== PaymentStatus.APPROVED) {
+      Alert.alert('Not Available', 'Receipt is only available for approved payments.');
+      return;
+    }
+    // Mock download
+    Alert.alert('Download Started', `Downloading receipt ${payment.receiptNumber}...`);
+  };
+
+  const formatCurrency = (amount: number) => `₹${amount.toLocaleString()}`;
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  };
+
+  const renderPayment = ({ item }: { item: Payment }) => (
+    <PaymentCard
+      payment={item}
+      onPress={() => handlePaymentPress(item)}
+      showCheckbox={selectMode && canBulkNotify}
+      isSelected={selectedPayments.has(item._id)}
+      onToggleSelect={() => togglePaymentSelection(item._id)}
+    />
+  );
+
+  return (
+    <Layout style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text category="h5" style={{ fontWeight: '700' }}>
+          {i18n.t('payments_title')}
+        </Text>
+        <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
+          {canBulkNotify && (
+            <Button
+              size="small"
+              appearance={selectMode ? 'filled' : 'ghost'}
+              status="basic"
+              onPress={() => {
+                setSelectMode(!selectMode);
+                setSelectedPayments(new Set());
+              }}
+            >
+              {selectMode ? 'Cancel' : 'Select'}
+            </Button>
+          )}
+          <NotificationBell />
+        </View>
+      </View>
+
+
+      {/* Bulk Actions */}
+      {selectMode && canBulkNotify && (
+        <View
+          style={[
+            styles.bulkActions,
+            { backgroundColor: theme['background-basic-color-2'] },
+          ]}
+        >
+          <CheckBox
+            checked={selectedPayments.size === filteredPayments.length}
+            indeterminate={selectedPayments.size > 0 && selectedPayments.size < filteredPayments.length}
+            onChange={handleSelectAll}
+          >
+            {() => (
+              <Text category="s2" style={{ marginLeft: spacing.sm }}>
+                Select All ({selectedPayments.size})
+              </Text>
+            )}
+          </CheckBox>
+          <Button
+            size="small"
+            status="info"
+            disabled={selectedPayments.size === 0}
+            onPress={handleBulkNotify}
+            accessoryLeft={(props: any) => <Icon {...props} name="notifications" />}
+          >
+            Notify
+          </Button>
+        </View>
+      )}
+
+      {/* Filter Chips */}
+      <View style={styles.filterContainer}>
+        <FlatList
+          horizontal
+          data={filters}
+          showsHorizontalScrollIndicator={false}
+          renderItem={({ item }) => (
+            <FilterChip
+              label={item.getLabel()}
+              selected={selectedStatus === (item.label === 'all' ? 'all' : item.label as PaymentStatus)} // Logic adjustment needed here due to type change
+              onPress={() => setSelectedStatus(item.label === 'all' ? 'all' : item.label as unknown as PaymentStatus)} // Quick fix for type mismatch
+            />
+          )}
+          keyExtractor={(item) => item.label}
+          contentContainerStyle={{ paddingHorizontal: spacing.lg }}
+        />
+      </View>
+
+      {/* Payments List */}
+      <FlatList
+        data={filteredPayments}
+        renderItem={renderPayment}
+        keyExtractor={(item) => item._id}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={theme['color-primary-500']}
+          />
+        }
+        ListEmptyComponent={
+          <EmptyState
+            icon="card-outline"
+            title="No payments"
+            message={isStaff ? 'No payments recorded yet' : 'No payment history found'}
+          />
+        }
+      />
+
+      {/* Payment Detail Modal */}
+      <BottomSheetModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        title="Payment Details"
+      >
+        {selectedPayment && (
+          <View style={styles.modalContent}>
+            {/* Amount */}
+            <View style={styles.amountSection}>
+              <Text category="h3" style={{ fontWeight: '700' }}>
+                {formatCurrency(selectedPayment.amount)}
+              </Text>
+              <View
+                style={[
+                  styles.statusBadge,
+                  {
+                    backgroundColor:
+                      selectedPayment.status === PaymentStatus.APPROVED
+                        ? `${theme['color-success-500']}20`
+                        : selectedPayment.status === PaymentStatus.PENDING_APPROVAL
+                        ? `${theme['color-warning-500']}20`
+                        : `${theme['color-danger-500']}20`,
+                  },
+                ]}
+              >
+                <Text
+                  category="c2"
+                  style={{
+                    fontWeight: '600',
+                    color:
+                      selectedPayment.status === PaymentStatus.APPROVED
+                        ? theme['color-success-500']
+                        : selectedPayment.status === PaymentStatus.PENDING_APPROVAL
+                        ? theme['color-warning-500']
+                        : theme['color-danger-500'],
+                  }}
+                >
+                  {selectedPayment.status === PaymentStatus.APPROVED
+                    ? 'Approved'
+                    : selectedPayment.status === PaymentStatus.PENDING_APPROVAL
+                    ? 'Pending'
+                    : 'Rejected'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.detailRow}>
+              <Text category="s2" appearance="hint">
+                Receipt Number
+              </Text>
+              <Text category="s1" style={{ fontWeight: '600' }}>
+                {selectedPayment.receiptNumber}
+              </Text>
+            </View>
+
+            {isStaff && (
+              <View style={styles.detailRow}>
+                <Text category="s2" appearance="hint">
+                  Student
+                </Text>
+                <Text category="s1">
+                  {(selectedPayment.studentId as User)?.name || 'N/A'}
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.detailRow}>
+              <Text category="s2" appearance="hint">
+                Payment Date
+              </Text>
+              <Text category="s1">{formatDate(selectedPayment.paymentDate)}</Text>
+            </View>
+
+            <View style={styles.detailRow}>
+              <Text category="s2" appearance="hint">
+                Payment Mode
+              </Text>
+              <Text category="s1" style={{ textTransform: 'uppercase' }}>
+                {selectedPayment.paymentMode}
+              </Text>
+            </View>
+
+            {selectedPayment.rejectionReason && (
+              <View style={styles.detailRow}>
+                <Text category="s2" appearance="hint">
+                  Rejection Reason
+                </Text>
+                <Text category="s1" status="danger">
+                  {selectedPayment.rejectionReason}
+                </Text>
+              </View>
+            )}
+
+            {/* Download Receipt Button (for approved payments) */}
+            {selectedPayment.status === PaymentStatus.APPROVED && (
+              <Button
+                style={styles.downloadButton}
+                appearance="outline"
+                status="info"
+                accessoryLeft={(props: any) => <Icon {...props} name="download-outline" />}
+                onPress={() => handleDownloadReceipt(selectedPayment)}
+              >
+                Download Receipt
+              </Button>
+            )}
+          </View>
+        )}
+      </BottomSheetModal>
+    </Layout>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+  },
+  bulkActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    borderRadius: borderRadius.lg,
+  },
+  filterContainer: {
+    marginBottom: spacing.md,
+  },
+  listContent: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: 120,
+  },
+  modalContent: {
+    paddingTop: spacing.md,
+  },
+  amountSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xl,
+  },
+  statusBadge: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+  },
+  detailRow: {
+    marginBottom: spacing.lg,
+  },
+  downloadButton: {
+    marginTop: spacing.lg,
+    borderRadius: borderRadius.xl,
+  },
+});
