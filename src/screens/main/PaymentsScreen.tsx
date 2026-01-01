@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Layout,
   Text,
@@ -23,82 +23,11 @@ import { BottomSheetModal } from '../../components/BottomSheetModal';
 import { EmptyState } from '../../components/EmptyState';
 import { useAppSelector } from '../../redux/hooks';
 import { Payment, PaymentStatus, PaymentMode, UserRole, User } from '../../types';
+import PaymentService from '../../services/PaymentService';
 import { spacing, borderRadius } from '../../theme';
 
 // Mock payment data
-const MOCK_PAYMENTS: Payment[] = [
-  {
-    _id: '1',
-    studentId: {
-      _id: 's1',
-      name: 'John Doe',
-      email: 'john@email.com',
-    } as User,
-    amount: 15000,
-    paymentDate: new Date(Date.now() - 86400000).toISOString(),
-    paymentMode: PaymentMode.UPI,
-    receiptNumber: 'R-202412-0001',
-    status: PaymentStatus.APPROVED,
-    recordedBy: 'admin1',
-    approvedBy: 'superadmin',
-    approvedAt: new Date().toISOString(),
-    receiptUrl: '/v1/payments/1/receipt',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    _id: '2',
-    studentId: {
-      _id: 's2',
-      name: 'Jane Smith',
-      email: 'jane@email.com',
-    } as User,
-    amount: 8000,
-    paymentDate: new Date(Date.now() - 172800000).toISOString(),
-    paymentMode: PaymentMode.CASH,
-    receiptNumber: 'R-202412-0002',
-    status: PaymentStatus.PENDING_APPROVAL,
-    recordedBy: 'receptionist1',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    _id: '3',
-    studentId: {
-      _id: 's3',
-      name: 'Mike Johnson',
-      email: 'mike@email.com',
-    } as User,
-    amount: 25000,
-    paymentDate: new Date(Date.now() - 604800000).toISOString(),
-    paymentMode: PaymentMode.ONLINE,
-    receiptNumber: 'R-202412-0003',
-    status: PaymentStatus.APPROVED,
-    recordedBy: 'admin1',
-    approvedBy: 'superadmin',
-    approvedAt: new Date(Date.now() - 518400000).toISOString(),
-    receiptUrl: '/v1/payments/3/receipt',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    _id: '4',
-    studentId: {
-      _id: 's1',
-      name: 'John Doe',
-      email: 'john@email.com',
-    } as User,
-    amount: 5000,
-    paymentDate: new Date(Date.now() - 1209600000).toISOString(),
-    paymentMode: PaymentMode.CHEQUE,
-    receiptNumber: 'R-202411-0004',
-    status: PaymentStatus.REJECTED,
-    recordedBy: 'receptionist1',
-    rejectionReason: 'Cheque bounced',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
+
 
 type StatusFilter = 'all' | PaymentStatus;
 
@@ -118,16 +47,7 @@ export const PaymentsScreen = () => {
   const isStaff = userRole === UserRole.ADMIN || userRole === UserRole.RECEPTIONIST || userRole === UserRole.SUPER_ADMIN;
   const canBulkNotify = userRole === UserRole.SUPER_ADMIN || userRole === UserRole.ADMIN;
 
-  // Filter payments based on role
-  const getPaymentsForRole = () => {
-    if (isStaff) return MOCK_PAYMENTS;
-    // Students see only their payments
-    return MOCK_PAYMENTS.filter(
-      (p) => (p.studentId as User)?._id === 's1' // Mock: assume current student is s1
-    );
-  };
-
-  const [payments] = useState<Payment[]>(getPaymentsForRole());
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [selectedStatus, setSelectedStatus] = useState<PaymentStatus | 'all'>('all');
   const [refreshing, setRefreshing] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
@@ -135,6 +55,25 @@ export const PaymentsScreen = () => {
   const [selectedPayments, setSelectedPayments] = useState<Set<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [filters] = useState(PAYMENT_FILTERS);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchPayments = async () => {
+    setIsLoading(true);
+    try {
+      const { data } = await PaymentService.getPayments();
+      setPayments(data);
+    } catch (error) {
+      console.error('Failed to fetch payments', error);
+      Alert.alert('Error', 'Failed to fetch payments');
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPayments();
+  }, []);
 
   const filteredPayments = payments.filter((payment) => {
     if (selectedStatus === 'all') return true;
@@ -143,9 +82,7 @@ export const PaymentsScreen = () => {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1000);
+    fetchPayments();
   }, []);
 
   const handlePaymentPress = (payment: Payment) => {

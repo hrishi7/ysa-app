@@ -1,25 +1,19 @@
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
+import { LogLevel, OneSignal } from 'react-native-onesignal';
 import { Platform } from 'react-native';
 import { store } from '../redux/store';
 import { setFCMToken, setPermissionGranted, addNotification } from '../redux/slices/notificationSlice';
 import { AppNotification } from '../types';
+import apiClient from './api/client';
 
-// Configure notification handling
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+// Replace with your OneSignal App ID
+const ONESIGNAL_APP_ID = process.env.EXPO_PUBLIC_ONESIGNAL_APP_ID || 'YOUR_ONESIGNAL_APP_ID_HERE';
 
 class NotificationService {
   private static instance: NotificationService;
-  private notificationListener: any;
-  private responseListener: any;
 
-  private constructor() {}
+  private constructor() {
+    this.initOneSignal();
+  }
 
   static getInstance(): NotificationService {
     if (!NotificationService.instance) {
@@ -28,51 +22,58 @@ class NotificationService {
     return NotificationService.instance;
   }
 
+  private initOneSignal() {
+    // OneSignal.Debug.setLogLevel(LogLevel.Verbose);
+    OneSignal.initialize(ONESIGNAL_APP_ID);
+
+    // Request permission on init (or can be done later)
+    OneSignal.Notifications.requestPermission(true);
+  }
+
   /**
-   * Request notification permissions and get push token
+   * Request notification permissions and get OneSignal Player ID
    */
   async registerForPushNotifications(): Promise<string | null> {
     try {
-      // Check if running on a real device
-      if (!Device.isDevice) {
-        console.log('Push notifications only work on physical devices');
-        return null;
-      }
+      // Request permission
+      const hasPermission = await OneSignal.Notifications.requestPermission(true);
+      store.dispatch(setPermissionGranted(hasPermission));
 
-      // Check existing permissions
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-
-      // Request permissions if not granted
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-
-      if (finalStatus !== 'granted') {
+      if (!hasPermission) {
         console.log('Push notification permission denied');
-        store.dispatch(setPermissionGranted(false));
         return null;
       }
 
-      store.dispatch(setPermissionGranted(true));
+      // Get OneSignal User ID (Player ID) / Subscription ID
+      // In OneSignal v5, 'pushSubscription' holds the ID
+      const pushSubscription = OneSignal.User.pushSubscription;
+      const playerId = await pushSubscription.getIdAsync();
 
-      // Get Expo push token
-      const token = (await Notifications.getExpoPushTokenAsync()).data;
-      console.log('Expo Push Token:', token);
-      store.dispatch(setFCMToken(token));
-
-      // Configure Android channel
-      if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('default', {
-          name: 'Default',
-          importance: Notifications.AndroidImportance.MAX,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#FF6D00',
-        });
+      if (playerId) {
+        console.log('OneSignal Player ID:', playerId);
+        store.dispatch(setFCMToken(playerId)); // Reusing setFCMToken action for Player ID
+        return playerId;
       }
+      
+      // Listen for changes if ID is not available immediately
+      return new Promise((resolve) => {
+        const listener = (event: any) => {
+           if (event.current.id) {
+             console.log('OneSignal Player ID obtained:', event.current.id);
+             store.dispatch(setFCMToken(event.current.id));
+             resolve(event.current.id);
+             pushSubscription.removeEventListener('change', listener);
+           }
+        };
+        pushSubscription.addEventListener('change', listener);
+        
+        // Timeout fallback
+        setTimeout(() => {
+           console.log('Timeout waiting for OneSignal Player ID');
+           resolve(null);
+        }, 5000);
+      });
 
-      return token;
     } catch (error) {
       console.error('Error registering for push notifications:', error);
       return null;
@@ -83,49 +84,52 @@ class NotificationService {
    * Set up notification listeners
    */
   setupNotificationListeners(
-    onNotificationReceived?: (notification: Notifications.Notification) => void,
-    onNotificationPressed?: (response: Notifications.NotificationResponse) => void
+    onNotificationReceived?: (notification: any) => void,
+    onNotificationPressed?: (response: any) => void
   ): void {
-    // Listener for notifications received while app is in foreground
-    this.notificationListener = Notifications.addNotificationReceivedListener(
-      (notification: Notifications.Notification) => {
-        console.log('Notification received:', notification);
-
-        // Convert to AppNotification and store
-        const appNotification: AppNotification = {
-          _id: notification.request.identifier,
-          title: notification.request.content.title || 'Notification',
-          body: notification.request.content.body || '',
-          type: this.getNotificationType(notification.request.content.data),
-          data: notification.request.content.data as Record<string, unknown>,
+    
+    // Foreground Notification Listener
+    OneSignal.Notifications.addEventListener('foregroundWillDisplay', (event) => {
+      console.log('OneSignal notification received in foreground:', event);
+      
+      const notification = event.getNotification();
+      
+      // Convert to AppNotification type
+      const appNotification: AppNotification = {
+          _id: notification.notificationId,
+          title: notification.title || 'Notification',
+          body: notification.body || '',
+          type: this.getNotificationType(notification.additionalData),
+          data: notification.additionalData as Record<string, unknown>,
           read: false,
           createdAt: new Date().toISOString(),
-        };
+      };
 
-        store.dispatch(addNotification(appNotification));
-        onNotificationReceived?.(notification);
-      }
-    );
+      store.dispatch(addNotification(appNotification));
+      onNotificationReceived?.(notification);
 
-    // Listener for when user interacts with notification
-    this.responseListener = Notifications.addNotificationResponseReceivedListener(
-      (response: Notifications.NotificationResponse) => {
-        console.log('Notification pressed:', response);
-        onNotificationPressed?.(response);
-      }
-    );
+      // Display the notification
+      event.getNotification().display();
+    });
+
+    // Notification Click Listener
+    OneSignal.Notifications.addEventListener('click', (event) => {
+      console.log('OneSignal notification clicked:', event);
+      onNotificationPressed?.(event);
+      
+      const data = event.notification.additionalData as Record<string, any>;
+      // Handle navigation or other logic here based on 'data'
+    });
   }
 
   /**
    * Remove notification listeners
    */
   removeNotificationListeners(): void {
-    if (this.notificationListener) {
-      Notifications.removeNotificationSubscription(this.notificationListener);
-    }
-    if (this.responseListener) {
-      Notifications.removeNotificationSubscription(this.responseListener);
-    }
+    // OneSignal v5 listeners are added globally, we might not need to remove them 
+    // or we can remove specific callbacks if we stored references.
+    // For now, we'll leave it empty or implement removal if strict cleanup is needed.
+    // OneSignal.Notifications.removeEventListener('foregroundWillDisplay', ...);
   }
 
   /**
@@ -142,46 +146,22 @@ class NotificationService {
   }
 
   /**
-   * Schedule a local notification (for testing)
+   * Fetch notifications from backend
    */
-  async scheduleLocalNotification(
-    title: string,
-    body: string,
-    seconds: number = 1
-  ): Promise<void> {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-        sound: true,
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds,
-        repeats: false,
-      },
-    });
-  }
-
-  /**
-   * Cancel all scheduled notifications
-   */
-  async cancelAllNotifications(): Promise<void> {
-    await Notifications.cancelAllScheduledNotificationsAsync();
-  }
-
-  /**
-   * Get badge count
-   */
-  async getBadgeCount(): Promise<number> {
-    return await Notifications.getBadgeCountAsync();
-  }
-
-  /**
-   * Set badge count
-   */
-  async setBadgeCount(count: number): Promise<void> {
-    await Notifications.setBadgeCountAsync(count);
+  async getNotifications(params?: {
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: AppNotification[]; total: number }> {
+     try {
+       const response = await apiClient.get<{ results: AppNotification[], totalResults: number }>('/notifications', { params });
+       return {
+         data: response.data.results,
+         total: response.data.totalResults,
+       };
+     } catch (error) {
+       console.error('Error fetching notifications:', error);
+       return { data: [], total: 0 };
+     }
   }
 }
 

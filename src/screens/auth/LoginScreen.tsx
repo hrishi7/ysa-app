@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
 import { i18n } from '../../i18n';
 import {
   Layout,
@@ -25,6 +27,7 @@ import { YInput } from '../../components/YInput';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { loginSuccess, setLoading, setError } from '../../redux/slices/authSlice';
 import { UserRole, User } from '../../types';
+import { AuthService } from '../../services/AuthService';
 import { spacing, borderRadius } from '../../theme';
 
 const ROLES = [
@@ -34,48 +37,9 @@ const ROLES = [
   { label: 'Super Admin', value: UserRole.SUPER_ADMIN },
 ];
 
-// Mock user for development
-const MOCK_USERS: Record<UserRole, User> = {
-  [UserRole.STUDENT]: {
-    _id: '1',
-    email: 'student@ysa.com',
-    name: 'John Student',
-    role: UserRole.STUDENT,
-    phone: '+91 9876543210',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    course: { name: 'Full Stack Development', duration: '6 months', startDate: '2024-01-01' },
-    totalFees: 50000,
-    feesPaid: 25000,
-  },
-  [UserRole.RECEPTIONIST]: {
-    _id: '2',
-    email: 'receptionist@ysa.com',
-    name: 'Jane Receptionist',
-    role: UserRole.RECEPTIONIST,
-    phone: '+91 9876543211',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  [UserRole.ADMIN]: {
-    _id: '3',
-    email: 'admin@ysa.com',
-    name: 'Admin User',
-    role: UserRole.ADMIN,
-    phone: '+91 9876543212',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  [UserRole.SUPER_ADMIN]: {
-    _id: '4',
-    email: 'superadmin@ysa.com',
-    name: 'Super Admin',
-    role: UserRole.SUPER_ADMIN,
-    phone: '+91 9876543213',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-};
+
+
+WebBrowser.maybeCompleteAuthSession();
 
 export const LoginScreen = ({ navigation }: any) => {
   const theme = useTheme();
@@ -98,35 +62,49 @@ export const LoginScreen = ({ navigation }: any) => {
 
     dispatch(setLoading(true));
 
-    // Simulate API call with mock data
-    setTimeout(() => {
-      const mockUser = MOCK_USERS[selectedRole.value];
-      dispatch(
-        loginSuccess({
-          user: { ...mockUser, email },
-          accessToken: 'mock_access_token',
-          refreshToken: 'mock_refresh_token',
-        })
-      );
-      // Navigation is handled automatically by AppNavigator based on isAuthenticated state
-    }, 1000);
+    try {
+      const response = await AuthService.login(email.trim(), password.trim(), selectedRole.value);
+      dispatch(loginSuccess(response));
+      // Navigation is handled automatically by AppNavigator
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.message || err.message || 'Login failed. Please try again.';
+      dispatch(setError(errorMessage));
+    } finally {
+      dispatch(setLoading(false));
+    }
+  };
+
+  // Google Sign In Configuration
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    clientId: 'YOUR_WEB_CLIENT_ID',
+    iosClientId: 'YOUR_IOS_CLIENT_ID',
+    androidClientId: 'YOUR_ANDROID_CLIENT_ID',
+  });
+
+  React.useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      handleGoogleAuth(id_token);
+    } else if (response?.type === 'error') {
+      dispatch(setError('Google Sign-In failed'));
+      dispatch(setLoading(false));
+    }
+  }, [response]);
+
+  const handleGoogleAuth = async (idToken: string) => {
+    dispatch(setLoading(true));
+    try {
+       const res = await AuthService.googleAuth(idToken);
+       dispatch(loginSuccess(res));
+    } catch (err: any) {
+       dispatch(setError(err.message || 'Google Sign-In failed'));
+    } finally {
+       dispatch(setLoading(false));
+    }
   };
 
   const handleGoogleSignIn = () => {
-    dispatch(setLoading(true));
-
-    // Simulate Google sign-in with mock data
-    setTimeout(() => {
-      const mockUser = MOCK_USERS[UserRole.STUDENT];
-      dispatch(
-        loginSuccess({
-          user: mockUser,
-          accessToken: 'mock_google_access_token',
-          refreshToken: 'mock_google_refresh_token',
-        })
-      );
-      // Navigation is handled automatically by AppNavigator based on isAuthenticated state
-    }, 1000);
+    promptAsync();
   };
 
   const GoogleIcon = (props: any) => (

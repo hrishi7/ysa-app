@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Layout,
   Text,
@@ -24,86 +24,11 @@ import { ApprovalCard } from '../../components/ApprovalCard';
 import { BottomSheetModal } from '../../components/BottomSheetModal';
 import { EmptyState } from '../../components/EmptyState';
 import { ApprovalRequest, ApprovalStatus, User } from '../../types';
+import PermissionService from '../../services/PermissionService';
 import { spacing, borderRadius } from '../../theme';
 
 // Mock data for approvals
-const MOCK_APPROVALS: ApprovalRequest[] = [
-  {
-    _id: '1',
-    action: 'Create Student',
-    requestedBy: {
-      _id: 'u1',
-      name: 'John Admin',
-      email: 'admin@ysa.com',
-      role: 'admin' as any,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    resourceType: 'student',
-    resourceId: 's1',
-    payload: { name: 'New Student', email: 'newstudent@email.com', course: 'Web Development' },
-    status: ApprovalStatus.PENDING,
-    createdAt: new Date(Date.now() - 3600000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    _id: '2',
-    action: 'Update Payment',
-    requestedBy: {
-      _id: 'u2',
-      name: 'Sarah Receptionist',
-      email: 'sarah@ysa.com',
-      role: 'receptionist' as any,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    resourceType: 'payment',
-    resourceId: 'p1',
-    payload: { amount: 5000, paymentMode: 'cash' },
-    status: ApprovalStatus.PENDING,
-    createdAt: new Date(Date.now() - 7200000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    _id: '3',
-    action: 'Delete Student',
-    requestedBy: {
-      _id: 'u1',
-      name: 'John Admin',
-      email: 'admin@ysa.com',
-      role: 'admin' as any,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    resourceType: 'student',
-    resourceId: 's2',
-    payload: { studentName: 'Old Student' },
-    status: ApprovalStatus.APPROVED,
-    processedAt: new Date(Date.now() - 86400000).toISOString(),
-    createdAt: new Date(Date.now() - 172800000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    _id: '4',
-    action: 'Grant Permission',
-    requestedBy: {
-      _id: 'u3',
-      name: 'Mike Admin',
-      email: 'mike@ysa.com',
-      role: 'admin' as any,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    resourceType: 'permission',
-    resourceId: 'pr1',
-    payload: { permission: 'payment:approve', targetUser: 'receptionist@ysa.com' },
-    status: ApprovalStatus.REJECTED,
-    rejectionReason: 'Insufficient justification',
-    processedAt: new Date(Date.now() - 43200000).toISOString(),
-    createdAt: new Date(Date.now() - 86400000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
+
 
 type StatusFilter = 'all' | ApprovalStatus;
 
@@ -118,13 +43,31 @@ export const ApprovalsScreen = () => {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
-  const [approvals, setApprovals] = useState<ApprovalRequest[]>(MOCK_APPROVALS);
+  const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [selectedStatus, setSelectedStatus] = useState<StatusFilter>('all');
   const [refreshing, setRefreshing] = useState(false);
   const [selectedApproval, setSelectedApproval] = useState<ApprovalRequest | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [filters] = useState(STATUS_FILTERS);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchApprovals = async () => {
+    setIsLoading(true);
+    try {
+      const { data } = await PermissionService.getApprovals();
+      setApprovals(data);
+    } catch (error) {
+      console.error('Failed to fetch approvals', error);
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchApprovals();
+  }, []);
 
   const filteredApprovals = approvals.filter((approval) => {
     if (selectedStatus === 'all') return true;
@@ -133,10 +76,7 @@ export const ApprovalsScreen = () => {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    // Simulate refresh
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1000);
+    fetchApprovals();
   }, []);
 
   const handleApprovalPress = (approval: ApprovalRequest) => {
@@ -144,34 +84,33 @@ export const ApprovalsScreen = () => {
     setModalVisible(true);
   };
 
-  const handleApprove = (approvalId: string) => {
+  const handleApprove = async (approvalId: string) => {
     setProcessing(true);
-    setTimeout(() => {
-      setApprovals((prev) =>
-        prev.map((a) =>
-          a._id === approvalId
-            ? { ...a, status: ApprovalStatus.APPROVED, processedAt: new Date().toISOString() }
-            : a
-        )
-      );
-      setProcessing(false);
+    try {
+      await PermissionService.processApproval(approvalId, ApprovalStatus.APPROVED);
+      // Refresh list
+      fetchApprovals();
       setModalVisible(false);
-    }, 800);
+    } catch (error) {
+      console.error('Failed to approve', error);
+      // Alert.alert('Error', 'Failed to approve request');
+    } finally {
+      setProcessing(false);
+    }
   };
 
-  const handleDeny = (approvalId: string) => {
+  const handleDeny = async (approvalId: string) => {
     setProcessing(true);
-    setTimeout(() => {
-      setApprovals((prev) =>
-        prev.map((a) =>
-          a._id === approvalId
-            ? { ...a, status: ApprovalStatus.REJECTED, processedAt: new Date().toISOString() }
-            : a
-        )
-      );
-      setProcessing(false);
+    try {
+      await PermissionService.processApproval(approvalId, ApprovalStatus.REJECTED);
+      // Refresh list
+      fetchApprovals();
       setModalVisible(false);
-    }, 800);
+    } catch (error) {
+       console.error('Failed to deny', error);
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const formatDate = (dateString: string) => {

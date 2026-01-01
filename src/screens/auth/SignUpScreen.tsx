@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
 import {
   Layout,
   Text,
@@ -25,12 +27,15 @@ import { YInput } from '../../components/YInput';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { loginSuccess, setLoading, setError, clearError } from '../../redux/slices/authSlice';
 import { UserRole, User } from '../../types';
+import { AuthService } from '../../services/AuthService';
 import { spacing, borderRadius } from '../../theme';
 
 // Only student self-signup by default
 const SIGNUP_ROLES = [
   { label: 'Student', value: UserRole.STUDENT },
 ];
+
+WebBrowser.maybeCompleteAuthSession();
 
 export const SignUpScreen = ({ navigation }: any) => {
   const theme = useTheme();
@@ -96,52 +101,56 @@ export const SignUpScreen = ({ navigation }: any) => {
 
     dispatch(setLoading(true));
 
-    // Simulate API call with mock data
-    setTimeout(() => {
-      const mockUser: User = {
-        _id: Date.now().toString(),
-        email: email.trim(),
+    try {
+      const response = await AuthService.signup({
         name: name.trim(),
-        role: selectedRole.value,
+        email: email.trim(),
+        password: password,
         phone: phone.trim(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+        role: selectedRole.value,
+      });
+      
+      dispatch(loginSuccess(response));
+      // Navigation is handled automatically by AppNavigator
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.message || err.message || 'Signup failed. Please try again.';
+      dispatch(setError(errorMessage));
+    } finally {
+      dispatch(setLoading(false));
+    }
+  };
 
-      dispatch(
-        loginSuccess({
-          user: mockUser,
-          accessToken: 'mock_access_token',
-          refreshToken: 'mock_refresh_token',
-        })
-      );
-      // Navigation is handled automatically by AppNavigator based on isAuthenticated state
-    }, 1500);
+  // Google Sign In Configuration
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    clientId: 'YOUR_WEB_CLIENT_ID',
+    iosClientId: 'YOUR_IOS_CLIENT_ID',
+    androidClientId: 'YOUR_ANDROID_CLIENT_ID',
+  });
+
+  React.useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      handleGoogleAuth(id_token);
+    } else if (response?.type === 'error') {
+      dispatch(setError('Google Sign-Up failed'));
+      dispatch(setLoading(false));
+    }
+  }, [response]);
+
+  const handleGoogleAuth = async (idToken: string) => {
+    dispatch(setLoading(true));
+    try {
+       const res = await AuthService.googleAuth(idToken);
+       dispatch(loginSuccess(res));
+    } catch (err: any) {
+       dispatch(setError(err.message || 'Google Sign-Up failed'));
+    } finally {
+       dispatch(setLoading(false));
+    }
   };
 
   const handleGoogleSignUp = () => {
-    dispatch(setLoading(true));
-
-    // Simulate Google sign-up with mock data
-    setTimeout(() => {
-      const mockUser: User = {
-        _id: Date.now().toString(),
-        email: 'student@gmail.com',
-        name: 'Google User',
-        role: UserRole.STUDENT,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      dispatch(
-        loginSuccess({
-          user: mockUser,
-          accessToken: 'mock_google_access_token',
-          refreshToken: 'mock_google_refresh_token',
-        })
-      );
-      // Navigation is handled automatically by AppNavigator based on isAuthenticated state
-    }, 1000);
+    promptAsync();
   };
 
   const GoogleIcon = () => (

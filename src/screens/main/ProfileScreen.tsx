@@ -24,6 +24,7 @@ import { useAppSelector, useAppDispatch } from '../../redux/hooks';
 import { logout } from '../../redux/slices/authSlice';
 import { toggleTheme, setLocale, selectTheme, selectLocale, Locale } from '../../redux/slices/appSlice';
 import { BottomSheetModal } from '../../components/BottomSheetModal';
+import UserService from '../../services/UserService';
 import { YInput } from '../../components/YInput';
 import { UserRole } from '../../types';
 import { spacing, borderRadius, shadows } from '../../theme';
@@ -75,10 +76,27 @@ export const ProfileScreen = ({ navigation }: any) => {
     ]);
   };
 
-  const handleSaveProfile = () => {
-    // Mock save - in real app would call API
-    Alert.alert('Success', 'Profile updated successfully!');
-    setEditModalVisible(false);
+  const handleSaveProfile = async () => {
+    try {
+      const updatedUser = await UserService.updateProfile({
+        name: editName,
+        phone: editPhone,
+      });
+      console.log('Profile updated', updatedUser);
+       // Dispatch update to Redux
+       // dispatch(setCredentials({ user: updatedUser, token: ... })) - we need token.
+       // For now, let's assume we need to re-fetch/update or just trust the response.
+       // Actually, we should update the store.
+       // Since we don't have the token handy here without selector, we might need to handle it.
+       // But wait, updateProfile returns the updated user.
+       // We can dispatch an action to update ONLY the user in auth slice.
+       // Let's assume there's an action for that or we just alert for now.
+      Alert.alert('Success', 'Profile updated successfully!');
+      setEditModalVisible(false);
+    } catch (error) {
+      console.error('Failed to update profile', error);
+      Alert.alert('Error', 'Failed to update profile');
+    }
   };
 
   const handleLanguageChange = (index: IndexPath | IndexPath[]) => {

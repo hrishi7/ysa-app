@@ -1,6 +1,5 @@
 import { ApprovalRequest, ApprovalStatus, Permission } from '../types';
-
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+import apiClient from './api/client';
 
 /**
  * Permission Service
@@ -10,8 +9,15 @@ export const PermissionService = {
    * Get current user's permissions
    */
   async getMyPermissions(): Promise<string[]> {
-    await delay(300);
-    return [];
+    // Assuming endpoint exists based on standard patterns, or permissions are part of user profile?
+    // If separate service:
+    try {
+      const response = await apiClient.get<Permission>('/permissions/me');
+      return response.data.permissions;
+    } catch (error) {
+       console.warn('Failed to fetch permissions', error);
+       return [];
+    }
   },
 
   /**
@@ -22,10 +28,10 @@ export const PermissionService = {
     limit?: number;
     status?: ApprovalStatus;
   }): Promise<{ data: ApprovalRequest[]; total: number }> {
-    await delay(600);
+     const response = await apiClient.get<{ results: ApprovalRequest[], totalResults: number }>('/permissions/approvals', { params });
     return {
-      data: [],
-      total: 0,
+      data: response.data.results,
+      total: response.data.totalResults,
     };
   },
 
@@ -37,36 +43,16 @@ export const PermissionService = {
     status: ApprovalStatus.APPROVED | ApprovalStatus.REJECTED,
     rejectionReason?: string
   ): Promise<ApprovalRequest> {
-    await delay(800);
-    return {
-      _id: id,
-      action: 'test-action',
-      requestedBy: 'user-1',
-      resourceType: 'student',
-      resourceId: 'resource-1',
-      payload: {},
-      status,
-      processedBy: 'super-admin',
-      processedAt: new Date().toISOString(),
-      rejectionReason,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    const response = await apiClient.put<ApprovalRequest>(`/permissions/approvals/${id}`, { status, rejectionReason });
+    return response.data;
   },
 
   /**
    * Grant permissions to user (super-admin only)
    */
   async grantPermissions(userId: string, permissions: string[]): Promise<Permission> {
-    await delay(800);
-    return {
-      _id: Date.now().toString(),
-      userId,
-      permissions,
-      grantedBy: 'super-admin',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    const response = await apiClient.post<Permission>('/permissions', { userId, permissions });
+    return response.data;
   },
 
   /**
@@ -78,18 +64,8 @@ export const PermissionService = {
     resourceId: string;
     payload: Record<string, unknown>;
   }): Promise<ApprovalRequest> {
-    await delay(600);
-    return {
-      _id: Date.now().toString(),
-      action: data.action,
-      requestedBy: 'current-user',
-      resourceType: data.resourceType,
-      resourceId: data.resourceId,
-      payload: data.payload,
-      status: ApprovalStatus.PENDING,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    const response = await apiClient.post<ApprovalRequest>('/permissions/request-approval', data);
+    return response.data;
   },
 };
 

@@ -1,6 +1,5 @@
 import { Payment, PaymentStatus, PaymentMode, ApiResponse } from '../types';
-
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+import apiClient from './api/client';
 
 /**
  * Payment Service
@@ -17,10 +16,10 @@ export const PaymentService = {
     startDate?: string;
     endDate?: string;
   }): Promise<{ data: Payment[]; total: number }> {
-    await delay(600);
+    const response = await apiClient.get<{ results: Payment[], totalResults: number }>('/payments', { params });
     return {
-      data: [],
-      total: 0,
+      data: response.data.results,
+      total: response.data.totalResults,
     };
   },
 
@@ -34,20 +33,8 @@ export const PaymentService = {
     paymentMode: PaymentMode;
     notes?: string;
   }): Promise<Payment> {
-    await delay(1000);
-    return {
-      _id: Date.now().toString(),
-      studentId: data.studentId,
-      amount: data.amount,
-      paymentDate: data.paymentDate,
-      paymentMode: data.paymentMode,
-      receiptNumber: `R-${new Date().getFullYear()}${new Date().getMonth() + 1}-0001`,
-      status: PaymentStatus.PENDING_APPROVAL,
-      recordedBy: 'current-user',
-      notes: data.notes,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    const response = await apiClient.post<Payment>('/payments', data);
+    return response.data;
   },
 
   /**
@@ -58,38 +45,34 @@ export const PaymentService = {
     approved: boolean,
     rejectionReason?: string
   ): Promise<Payment> {
-    await delay(800);
-    return {
-      _id: id,
-      studentId: 'student-1',
-      amount: 5000,
-      paymentDate: new Date().toISOString(),
-      paymentMode: PaymentMode.CASH,
-      receiptNumber: 'R-202412-0001',
-      status: approved ? PaymentStatus.APPROVED : PaymentStatus.REJECTED,
-      recordedBy: 'staff-1',
-      approvedBy: 'super-admin',
-      approvedAt: new Date().toISOString(),
-      rejectionReason: !approved ? rejectionReason : undefined,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    // If approved=true, call approval endpoint. If false, rejection logic?
+    // Postman: PUT /v1/payments/:id/approval { "approved": true }
+    // If rejected, maybe sending approved=false? and reason.
+    const response = await apiClient.put<Payment>(`/payments/${id}/approval`, { approved, rejectionReason });
+    return response.data;
   },
 
   /**
    * Download payment receipt (returns URI)
    */
   async downloadReceipt(paymentId: string): Promise<string> {
-    await delay(500);
-    return `file:///receipt-${paymentId}.pdf`;
+    // Check if we can get the receipt URL directly
+    // Ideally, getPayment(id) returns { receiptUrl: ... }
+    const response = await apiClient.get<Payment>(`/payments/${paymentId}`);
+    if (response.data.receiptUrl) {
+      return response.data.receiptUrl;
+    }
+    // Fallback: If no URL, return empty or throw? 
+    // The previous mock returned a file URI. 
+    // We'll return a placeholder or empty string if not found.
+    return '';
   },
 
   /**
    * Send payment reminders (bulk)
    */
   async sendReminders(paymentIds: string[]): Promise<void> {
-    await delay(1000);
-    // Send reminders to students
+    await apiClient.post('/payments/reminders', { paymentIds });
   },
 };
 

@@ -1,83 +1,88 @@
-import React, { useState } from 'react';
-import { Layout, Text, Button, Avatar, Icon } from '@ui-kitten/components';
-import { StyleSheet, View, Image, ScrollView, TouchableOpacity } from 'react-native';
-import { CircleAvatar } from '../../components/CircleAvatar';
-import { StatCard } from '../../components/StatCard';
-import { LinearGradient } from 'expo-linear-gradient';
+import React from 'react';
+import { Layout, Text, Button, Icon, useTheme } from '@ui-kitten/components';
+import { StyleSheet, View, ScrollView, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAppSelector } from '../../redux/hooks';
+import { i18n } from '../../i18n';
+import { spacing, borderRadius, shadows } from '../../theme';
+import { UserRole } from '../../types';
 
-export const HomeScreen = () => {
+export const HomeScreen = ({ navigation }: any) => {
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  const user = useAppSelector((state) => state.auth.user);
+
+  const QuickAction = ({ icon, title, onPress, color }: any) => (
+    <TouchableOpacity 
+      style={[styles.actionCard, { backgroundColor: theme['background-basic-color-2'] }, shadows.sm]}
+      onPress={onPress}
+    >
+      <View style={[styles.iconContainer, { backgroundColor: `${color}20` }]}>
+        <Icon name={icon} fill={color} style={{ width: 24, height: 24 }} />
+      </View>
+      <Text category="s1" style={{ marginTop: spacing.md, fontWeight: '600' }}>{title}</Text>
+    </TouchableOpacity>
+  );
+
   return (
-    <Layout style={styles.container}>
+    <Layout style={[styles.container, { paddingTop: insets.top }]}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
         {/* Header */}
         <View style={styles.header}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Icon name='wifi' style={{ width: 24, height: 24, marginRight: 8 }} fill='#000'/>
-                <Text category='s1'>Live virtual try-on</Text>
+            <View>
+                <Text category='h5' style={{ fontWeight: '700' }}>{`Hello, ${user?.name?.split(' ')[0] || 'Guest'}`}</Text>
+                <Text category='s1' appearance='hint'>{i18n.t('welcome_back')}</Text>
             </View>
+            <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
+               <Icon name="person-outline" fill={theme['text-basic-color']} style={{ width: 28, height: 28 }} />
+            </TouchableOpacity>
         </View>
 
-        {/* Avatars */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.avatarList}>
-            <CircleAvatar label='You' isAdd />
-            <CircleAvatar label='@Sophia...' imageUrl='https://i.pravatar.cc/150?u=a042581f4e29026024d' />
-            <CircleAvatar label='@LiamSh...' imageUrl='https://i.pravatar.cc/150?u=a042581f4e29026704d' />
-            <CircleAvatar label='@OliviaD...' imageUrl='https://i.pravatar.cc/150?u=a04258114e29026302d' />
-            <CircleAvatar label='@Charlo...' imageUrl='https://i.pravatar.cc/150?u=a04258114e29026702d' />
-        </ScrollView>
-
-        <Text category='h5' style={styles.sectionTitle}>Your stats</Text>
-
-        {/* Stats Grid */}
-        <View style={styles.statsGrid}>
-            <View style={styles.column}>
-                 <StatCard 
-                    title='OUTFITS' 
-                    value='10' 
-                    type='primary' 
-                    iconName='shirt-outline'
-                 />
-                 <StatCard 
-                    title='OUTFITS WITH EVENTS' 
-                    value='4' 
-                    type='dark'
-                    iconName='calendar-outline'
-                 />
-            </View>
-            <View style={styles.column}>
-                {/* Simulated partial card for "Saved" */}
-                <View style={[styles.savedCard, { backgroundColor: '#E0E0E0' }]}>
-                    <Text category='c2' style={{ textTransform: 'uppercase' }}>SAVED OUTFITS</Text>
-                    <Text category='h4'>12</Text>
-                </View>
-            </View>
+        {/* Banner */}
+        <View style={[styles.banner, { backgroundColor: theme['color-primary-500'] }]}>
+          <View style={{ flex: 1 }}>
+            <Text category="h6" style={{ color: 'white', marginBottom: spacing.xs }}>Your Success Academy</Text>
+            <Text category="c1" style={{ color: 'white', opacity: 0.9 }}>Manage your education journey efficiently.</Text>
+          </View>
+          <Icon name="book-open-outline" fill="white" style={{ width: 48, height: 48, opacity: 0.8 }} />
         </View>
 
-        {/* Daily Outfit Card */}
-        <View style={styles.outfitCard}>
-            <View style={styles.outfitInfo}>
-                <Text category='h4' style={styles.outfitTitle}>Personalized{'\n'}daily outfit</Text>
-                <View style={styles.weatherWidget}>
-                    <Icon name='cloud-outline' fill='#1A1A1A' style={{width: 24, height: 24}} />
-                    <Text category='h6'>16°c</Text>
-                </View>
-                <Button 
-                    accessoryLeft={<Icon name='eye-outline' />} 
-                    appearance='filled' 
-                    status='basic'
-                    style={styles.viewButton}
-                />
-            </View>
-            <Image 
-                source={{ uri: 'https://images.unsplash.com/photo-1550928431-ee0ec6db30d3?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80' }} 
-                style={styles.outfitImage}
-            />
+        <Text category='h6' style={styles.sectionTitle}>Quick Actions</Text>
+
+        <View style={styles.actionsGrid}>
+           <QuickAction 
+             icon="people-outline" 
+             title="Students" 
+             color={theme['color-info-500']}
+             onPress={() => navigation.navigate('Students')}
+           />
+           <QuickAction 
+             icon="credit-card-outline" 
+             title="Payments" 
+             color={theme['color-success-500']}
+             onPress={() => navigation.navigate('Payments')}
+           />
+           {(user?.role === UserRole.ADMIN || user?.role === UserRole.SUPER_ADMIN) && (
+             <QuickAction 
+               icon="shield-outline" 
+               title="Admins" 
+               color={theme['color-warning-500']}
+               onPress={() => navigation.navigate('Admins')}
+             />
+           )}
+           <QuickAction 
+             icon="settings-outline" 
+             title="Profile" 
+             color={theme['color-primary-500']}
+             onPress={() => navigation.navigate('Profile')}
+           />
         </View>
-        
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 }}>
-             <Text category='h6'>Last news</Text>
-             <Text category='s1' appearance='hint'>See all</Text>
+
+        {/* Recent Activity Placeholder */}
+        <Text category='h6' style={styles.sectionTitle}>Recent Updates</Text>
+        <View style={[styles.emptyCard, { backgroundColor: theme['background-basic-color-2'] }]}>
+            <Text appearance="hint">No recent updates</Text>
         </View>
 
       </ScrollView>
@@ -88,81 +93,52 @@ export const HomeScreen = () => {
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
-    paddingTop: 50,
-    backgroundColor: '#FFFFFF', // Assuming light mode base for this design
   },
   scrollContent: {
-      paddingHorizontal: 24,
+      padding: spacing.lg,
       paddingBottom: 100
   },
   header: {
       flexDirection: 'row',
       justifyContent: 'space-between',
-      marginBottom: 24
+      alignItems: 'center',
+      marginBottom: spacing.xl,
+      marginTop: spacing.md
   },
-  avatarList: {
-      marginBottom: 32,
-      maxHeight: 90
+  banner: {
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xl,
   },
   sectionTitle: {
-      marginBottom: 16
+      marginBottom: spacing.md,
+      fontWeight: '700'
   },
-  statsGrid: {
+  actionsGrid: {
       flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginBottom: 24
+      flexWrap: 'wrap',
+      gap: spacing.md,
+      marginBottom: spacing.xl,
   },
-  column: {
-      width: '48%',
+  actionCard: {
+      width: '47%',
+      padding: spacing.lg,
+      borderRadius: borderRadius.lg,
+      alignItems: 'flex-start',
   },
-  savedCard: {
-      width: '100%',
-      height: 120,
-      borderRadius: 24,
-      padding: 16,
-      justifyContent: 'space-between',
-      // Simulating the cut-off look
-      marginRight: -40 
+  iconContainer: {
+    padding: spacing.sm,
+    borderRadius: borderRadius.md,
   },
-  outfitCard: {
-      backgroundColor: '#F0F0F0',
-      borderRadius: 32,
-      height: 300,
-      padding: 24,
-      flexDirection: 'row',
-      overflow: 'hidden',
-      marginBottom: 24
-  },
-  outfitInfo: {
-      flex: 1,
-      justifyContent: 'space-between',
-      zIndex: 1
-  },
-  outfitTitle: {
-      lineHeight: 32
-  },
-  weatherWidget: {
-      backgroundColor: '#FFFFFF',
-      borderRadius: 20,
-      width: 70,
-      height: 70,
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginVertical: 16
-  },
-  viewButton: {
-      width: 50,
-      height: 50,
-      borderRadius: 25,
-      backgroundColor: '#1A1A1A',
-      borderWidth: 0
-  },
-  outfitImage: {
-      width: 200,
-      height: 350,
-      position: 'absolute',
-      right: -30,
-      bottom: -20,
-      resizeMode: 'cover'
+  emptyCard: {
+    padding: spacing.xl,
+    borderRadius: borderRadius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)'
   }
 });

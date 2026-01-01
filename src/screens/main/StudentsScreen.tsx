@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Layout,
   Text,
@@ -20,69 +20,9 @@ import { StudentCard } from '../../components/StudentCard';
 import { BottomSheetModal } from '../../components/BottomSheetModal';
 import { EmptyState } from '../../components/EmptyState';
 import { User, UserRole, FeeFrequency } from '../../types';
+import UserService from '../../services/UserService';
 import { spacing, borderRadius } from '../../theme';
 
-// Mock data for students
-const MOCK_STUDENTS: User[] = [
-  {
-    _id: '1',
-    email: 'john.doe@email.com',
-    name: 'John Doe',
-    role: UserRole.STUDENT,
-    phone: '+91 9876543210',
-    profileImage: 'https://i.pravatar.cc/150?u=1',
-    course: { name: 'Full Stack Development', duration: '6 months', startDate: '2024-01-15' },
-    totalFees: 50000,
-    feesPaid: 30000,
-    feeFrequency: FeeFrequency.MONTHLY,
-    nextPaymentDue: '2024-02-15',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    _id: '2',
-    email: 'jane.smith@email.com',
-    name: 'Jane Smith',
-    role: UserRole.STUDENT,
-    phone: '+91 9876543211',
-    profileImage: 'https://i.pravatar.cc/150?u=2',
-    course: { name: 'UI/UX Design', duration: '4 months', startDate: '2024-02-01' },
-    totalFees: 35000,
-    feesPaid: 35000,
-    feeFrequency: FeeFrequency.ONE_TIME,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    _id: '3',
-    email: 'mike.johnson@email.com',
-    name: 'Mike Johnson',
-    role: UserRole.STUDENT,
-    phone: '+91 9876543212',
-    profileImage: 'https://i.pravatar.cc/150?u=3',
-    course: { name: 'Data Science', duration: '8 months', startDate: '2023-11-01' },
-    totalFees: 70000,
-    feesPaid: 20000,
-    feeFrequency: FeeFrequency.QUARTERLY,
-    nextPaymentDue: '2024-02-01',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    _id: '4',
-    email: 'sarah.wilson@email.com',
-    name: 'Sarah Wilson',
-    role: UserRole.STUDENT,
-    phone: '+91 9876543213',
-    course: { name: 'Web Development', duration: '3 months', startDate: '2024-01-20' },
-    totalFees: 25000,
-    feesPaid: 0,
-    feeFrequency: FeeFrequency.MONTHLY,
-    nextPaymentDue: '2024-01-30',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
 
 type FeeFilter = 'all' | 'paid' | 'pending' | 'overdue';
 
@@ -97,13 +37,32 @@ export const StudentsScreen = () => {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
-  const [students] = useState<User[]>(MOCK_STUDENTS);
+  const [students, setStudents] = useState<User[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<FeeFilter>('all');
   const [filters] = useState(FEE_FILTERS);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<User | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchStudents = async () => {
+    setIsLoading(true);
+    try {
+      const { data } = await UserService.getStudents();
+      setStudents(data);
+    } catch (error) {
+      console.error('Failed to fetch students', error);
+      // Ideally show toast/alert
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStudents();
+  }, []);
 
   const filteredStudents = students.filter((student) => {
     // Search filter
@@ -130,9 +89,7 @@ export const StudentsScreen = () => {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1000);
+    fetchStudents();
   }, []);
 
   const handleStudentPress = (student: User) => {

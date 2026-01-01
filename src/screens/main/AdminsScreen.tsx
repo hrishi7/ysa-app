@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Layout,
   Text,
@@ -23,62 +23,12 @@ import { BottomSheetModal } from '../../components/BottomSheetModal';
 import { EmptyState } from '../../components/EmptyState';
 import { YInput } from '../../components/YInput';
 import { User, UserRole, PermissionActions } from '../../types';
+import UserService from '../../services/UserService';
 import { spacing, borderRadius } from '../../theme';
 
 // Mock data for admins/staff
-const MOCK_ADMINS: (User & { permissions: string[] })[] = [
-  {
-    _id: '1',
-    email: 'admin1@ysa.com',
-    name: 'Rahul Sharma',
-    role: UserRole.ADMIN,
-    phone: '+91 9876543210',
-    profileImage: 'https://i.pravatar.cc/150?u=admin1',
-    permissions: [
-      PermissionActions.STUDENT_CREATE,
-      PermissionActions.STUDENT_READ,
-      PermissionActions.STUDENT_UPDATE,
-      PermissionActions.PAYMENT_RECORD,
-      PermissionActions.PAYMENT_READ,
-    ],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    _id: '2',
-    email: 'receptionist1@ysa.com',
-    name: 'Priya Patel',
-    role: UserRole.RECEPTIONIST,
-    phone: '+91 9876543211',
-    profileImage: 'https://i.pravatar.cc/150?u=receptionist1',
-    permissions: [
-      PermissionActions.STUDENT_READ,
-      PermissionActions.PAYMENT_RECORD,
-      PermissionActions.PAYMENT_READ,
-    ],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    _id: '3',
-    email: 'admin2@ysa.com',
-    name: 'Amit Kumar',
-    role: UserRole.ADMIN,
-    phone: '+91 9876543212',
-    profileImage: 'https://i.pravatar.cc/150?u=admin2',
-    permissions: [
-      PermissionActions.STUDENT_CREATE,
-      PermissionActions.STUDENT_READ,
-      PermissionActions.STUDENT_UPDATE,
-      PermissionActions.STUDENT_DELETE,
-      PermissionActions.PAYMENT_RECORD,
-      PermissionActions.PAYMENT_READ,
-      PermissionActions.PAYMENT_APPROVE,
-    ],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
+
+type AdminUser = User & { permissions: string[] };
 
 type RoleFilter = 'all' | UserRole.ADMIN | UserRole.RECEPTIONIST;
 
@@ -102,14 +52,33 @@ export const AdminsScreen = () => {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
-  const [admins, setAdmins] = useState(MOCK_ADMINS);
+  const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [selectedRole, setSelectedRole] = useState<RoleFilter>('all');
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedAdmin, setSelectedAdmin] = useState<(typeof MOCK_ADMINS)[0] | null>(null);
+  const [selectedAdmin, setSelectedAdmin] = useState<AdminUser | null>(null);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [editedPermissions, setEditedPermissions] = useState<string[]>([]);
   const [filters] = useState(ROLE_FILTERS);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchStaff = async () => {
+    setIsLoading(true);
+    try {
+      const staff = await UserService.getStaff();
+      // Cast to AdminUser[] assuming backend returns permissions for staff
+      setAdmins(staff as AdminUser[]);
+    } catch (error) {
+      console.error('Failed to fetch staff', error);
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStaff();
+  }, []);
 
   // Add form state
   const [newName, setNewName] = useState('');
@@ -124,12 +93,10 @@ export const AdminsScreen = () => {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1000);
+    fetchStaff();
   }, []);
 
-  const handleAdminPress = (admin: (typeof MOCK_ADMINS)[0]) => {
+  const handleAdminPress = (admin: AdminUser) => {
     setSelectedAdmin(admin);
     setEditedPermissions([...admin.permissions]);
     setEditModalVisible(true);
@@ -157,6 +124,7 @@ export const AdminsScreen = () => {
   };
 
   const handleAddAdmin = () => {
+    // TODO: Implement actual API call to create admin
     const newAdmin = {
       _id: Date.now().toString(),
       email: newEmail,
@@ -166,7 +134,9 @@ export const AdminsScreen = () => {
       permissions: [PermissionActions.STUDENT_READ, PermissionActions.PAYMENT_READ],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    };
+    } as AdminUser;
+    
+    // Ideally we call UserService.createStaff(...) here
     setAdmins((prev) => [...prev, newAdmin]);
     setAddModalVisible(false);
     setNewName('');
@@ -174,7 +144,7 @@ export const AdminsScreen = () => {
     setNewPhone('');
   };
 
-  const renderAdmin = ({ item }: { item: (typeof MOCK_ADMINS)[0] }) => (
+  const renderAdmin = ({ item }: { item: AdminUser }) => (
     <AdminCard admin={item} onPress={() => handleAdminPress(item)} />
   );
 

@@ -1,41 +1,21 @@
 import { User, ApiResponse, AuthResponse, UserRole } from '../types';
 
-const API_BASE_URL = 'http://localhost:3000/v1';
+import apiClient from './api/client';
 
-/**
- * Mock delay to simulate network latency
- */
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+// Removed mock delay and base URL
+// const API_BASE_URL = 'http://localhost:3000/v1';
+// const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Authentication Service
  */
 export const AuthService = {
   /**
-   * Login with email, password, and role
+   * Login with email, password
    */
   async login(email: string, password: string, role?: UserRole): Promise<AuthResponse> {
-    await delay(1000);
-    
-    // Mock response - in real app, call API
-    // const response = await fetch(`${API_BASE_URL}/auth/login`, {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ email, password }),
-    // });
-    
-    return {
-      user: {
-        _id: '1',
-        email,
-        name: 'Demo User',
-        role: role || UserRole.STUDENT,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      accessToken: 'mock_access_token',
-      refreshToken: 'mock_refresh_token',
-    };
+    const response = await apiClient.post<AuthResponse>('/auth/login', { email, password });
+    return response.data;
   },
 
   /**
@@ -48,77 +28,50 @@ export const AuthService = {
     phone?: string;
     role?: UserRole;
   }): Promise<AuthResponse> {
-    await delay(1500);
-    
-    return {
-      user: {
-        _id: Date.now().toString(),
-        email: data.email,
-        name: data.name,
-        role: data.role || UserRole.STUDENT,
-        phone: data.phone,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      accessToken: 'mock_access_token',
-      refreshToken: 'mock_refresh_token',
-    };
+    const response = await apiClient.post<AuthResponse>('/auth/signup', data);
+    return response.data;
   },
 
   /**
    * Google OAuth authentication
    */
   async googleAuth(idToken: string): Promise<AuthResponse> {
-    await delay(1000);
-    
-    return {
-      user: {
-        _id: Date.now().toString(),
-        email: 'user@gmail.com',
-        name: 'Google User',
-        role: UserRole.STUDENT,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      accessToken: 'mock_google_access_token',
-      refreshToken: 'mock_google_refresh_token',
-    };
+    // Assuming backend has a specific endpoint for Google Auth, often /auth/google
+    // or passing idToken to login
+    const response = await apiClient.post<AuthResponse>('/auth/google', { idToken });
+    return response.data;
   },
 
   /**
    * Refresh access token
    */
-  async refreshToken(token: string): Promise<{ accessToken: string; refreshToken: string }> {
-    await delay(500);
-    
+  async refreshToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
+    const response = await apiClient.post<{ tokens: { access: { token: string }, refresh: { token: string } } }>('/auth/refresh-tokens', { refreshToken });
     return {
-      accessToken: 'new_mock_access_token',
-      refreshToken: 'new_mock_refresh_token',
+      accessToken: response.data.tokens.access.token,
+      refreshToken: response.data.tokens.refresh.token,
     };
   },
 
   /**
    * Logout
    */
-  async logout(): Promise<void> {
-    await delay(300);
-    // Clear tokens, invalidate session on server
+  async logout(refreshToken?: string): Promise<void> {
+    await apiClient.post('/auth/logout', { refreshToken });
   },
 
   /**
    * Request password reset
    */
   async forgotPassword(email: string): Promise<void> {
-    await delay(1000);
-    // Send reset email
+    await apiClient.post('/auth/forgot-password', { email });
   },
 
   /**
    * Reset password with token
    */
   async resetPassword(token: string, newPassword: string): Promise<void> {
-    await delay(1000);
-    // Reset password
+    await apiClient.post(`/auth/reset-password?token=${token}`, { password: newPassword });
   },
 };
 
